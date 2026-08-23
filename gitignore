@@ -1,0 +1,68 @@
+# ==============================
+# MediPredict — root .gitignore
+# Covers frontend/, backend/, and ai-model/
+# ==============================
+
+# ── Environment variables (never commit secrets) ─────────────────────────────
+.env
+.env.local
+.env.*.local
+backend/.env
+frontend/.env
+ai-model/.env
+
+# ── Node.js (frontend + backend) ─────────────────────────────────────────────
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.npm
+.pnp
+.pnp.js
+
+# Build outputs
+dist/
+build/
+frontend/dist/
+frontend/build/
+.vite/
+
+# ── Backend specific ──────────────────────────────────────────────────────────
+backend/logs/
+*.log
+
+# ── Python / AI model ─────────────────────────────────────────────────────────
+ai-model/venv/
+ai-model/env/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Trained model artifacts & datasets (regenerate locally / download separately —
+# don't bloat the repo or leak large data files)
+ai-model/model/
+ai-model/data/
+*.joblib
+*.pkl
+
+# ── OS / Editor files ──────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+Desktop.ini
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ── Misc ───────────────────────────────────────────────────────────────────────
+*.tmp
+*.bak
+coverage/
+.cache/
