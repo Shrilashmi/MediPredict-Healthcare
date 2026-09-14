@@ -1,64 +1,317 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { MessageSquare, Send, RotateCcw, AlertTriangle, Bot, User } from 'lucide-react'
+import {
+  MessageSquare,
+  Send,
+  RotateCcw,
+  AlertTriangle,
+  Bot,
+  User,
+} from 'lucide-react'
 import { useAuth } from '../../context/AuthContext.jsx'
-import { formatDateTime } from '../../utils/helpers.js'
 
-const DISCLAIMER = '⚠️ This AI assistant provides general health information only and is not a substitute for professional medical advice, diagnosis, or treatment. Always consult a qualified healthcare provider.'
+const DISCLAIMER =
+  'MediPredict AI provides general health information and is not a substitute for professional medical advice, diagnosis, or treatment. If you have severe or worsening symptoms, seek urgent medical care.'
 
 const SUGGESTED_QUESTIONS = [
-  'What does a high blood pressure reading mean?',
-  'How can I lower my blood sugar naturally?',
-  'What are the early signs of diabetes?',
-  'When should I see a cardiologist?',
-  'How do I interpret my BMI?',
-  'What lifestyle changes help with hypertension?',
+  'What are the warning signs of diabetes?',
+  'Why do I keep getting headaches?',
+  'Why am I feeling tired all the time?',
+  'What can cause stomach pain?',
+  'What are common causes of breathing problems?',
 ]
 
-function ChatBubble({ msg }) {
-  const isUser = msg.role === 'user'
-  return (
-    <div style={{
-      display: 'flex',
-      flexDirection: isUser ? 'row-reverse' : 'row',
-      gap: 10,
-      alignItems: 'flex-end',
-      maxWidth: '100%',
-    }}>
-      {/* Avatar */}
-      <div style={{
-        width: 32, height: 32, borderRadius: '50%', flexShrink: 0,
-        background: isUser ? 'var(--color-primary)' : 'var(--color-accent)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-      }}>
-        {isUser
-          ? <User  size={16} color="#fff" />
-          : <Bot   size={16} color="#fff" />
-        }
-      </div>
+const AI_HEADINGS = new Set([
+  'Common Signs',
+  'Tests for Diabetes',
+  'Who Should Get Tested?',
+  'Why Early Detection is Important',
+])
 
-      {/* Bubble */}
-      <div style={{
-        maxWidth: '75%',
-        background: isUser ? 'var(--color-primary)' : 'var(--color-surface)',
-        color: isUser ? '#fff' : 'var(--color-text)',
-        borderRadius: isUser ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
-        padding: '12px 16px',
-        boxShadow: 'var(--shadow-sm)',
-        border: isUser ? 'none' : '1px solid var(--color-border)',
-        lineHeight: 1.65,
-        fontSize: '.9375rem',
-        whiteSpace: 'pre-wrap',
-      }}>
-        {msg.content}
-        {msg.timestamp && (
-          <div style={{
-            fontSize: '.72rem', marginTop: 6,
-            color: isUser ? 'rgba(255,255,255,.6)' : 'var(--color-text-light)',
-            textAlign: isUser ? 'right' : 'left',
-          }}>
-            {formatDateTime(msg.timestamp)}
+function formatChatTime(timestamp) {
+  if (!timestamp) return ''
+
+  const date = new Date(timestamp)
+
+  if (Number.isNaN(date.getTime())) {
+    return ''
+  }
+
+  return date.toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function formatAIResponse(text) {
+  if (!text) return ''
+
+  let formatted = String(text)
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .trim()
+
+  // Convert bullet characters to normal bullets
+  formatted = formatted.replace(/â€¢\s*/g, '- ')
+  formatted = formatted.replace(/•\s*/g, '- ')
+
+  /*
+   * Put known headings on their own lines.
+   * This handles MedQuad answers where headings may
+   * appear between spaces instead of real line breaks.
+   */
+  const headings = [
+    'Common Signs',
+    'Tests for Diabetes',
+    'Who Should Get Tested?',
+    'Why Early Detection is Important',
+  ]
+
+  headings.forEach((heading) => {
+    const escaped = heading.replace(
+      /[.*+?^${}()|[\]\\]/g,
+      '\\$&'
+    )
+
+    // Heading preceded by punctuation
+    formatted = formatted.replace(
+      new RegExp(
+        `([.!?])\\s+(${escaped})(?=\\s|$)`,
+        'gi'
+      ),
+      '$1\n\n$2\n\n'
+    )
+
+    // Heading preceded by multiple spaces
+    formatted = formatted.replace(
+      new RegExp(
+        `\\s{2,}(${escaped})(?=\\s|$)`,
+        'gi'
+      ),
+      '\n\n$1\n\n'
+    )
+  })
+
+  /*
+   * Put inline bullet points onto separate lines.
+   */
+  formatted = formatted.replace(
+    /\s+-\s+(?=[A-Za-z])/g,
+    '\n- '
+  )
+
+  /*
+   * If bullets come directly after a colon,
+   * start them on a new paragraph.
+   */
+  formatted = formatted.replace(
+    /:\s+-\s+/g,
+    ':\n\n- '
+  )
+
+  /*
+   * Normalize spaces while preserving line breaks.
+   */
+  formatted = formatted
+    .split('\n')
+    .map((line) =>
+      line
+        .replace(/[ \t]+/g, ' ')
+        .trim()
+    )
+    .join('\n')
+
+  /*
+   * Prevent excessive blank lines.
+   */
+  formatted = formatted.replace(
+    /\n{3,}/g,
+    '\n\n'
+  )
+
+  return formatted.trim()
+}
+
+/*
+ * Render the AI response as structured React elements.
+ * This makes headings bold and bullets visually separate.
+ */
+function renderAIResponse(text) {
+  const formatted = formatAIResponse(text)
+
+  if (!formatted) return null
+
+  const lines = formatted.split('\n')
+
+  return lines.map((line, index) => {
+    const trimmed = line.trim()
+
+    // Blank line
+    if (!trimmed) {
+      return (
+        <div
+          key={`space-${index}`}
+          style={{ height: '8px' }}
+        />
+      )
+    }
+
+    // Heading
+    if (AI_HEADINGS.has(trimmed)) {
+      return (
+        <div
+          key={`heading-${index}`}
+          style={{
+            fontWeight: 700,
+            fontSize: '14px',
+            color: '#0f766e',
+            marginTop: index === 0 ? '0' : '8px',
+            marginBottom: '6px',
+          }}
+        >
+          {trimmed}
+        </div>
+      )
+    }
+
+    // Bullet
+    if (trimmed.startsWith('- ')) {
+      return (
+        <div
+          key={`bullet-${index}`}
+          style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: '8px',
+            marginBottom: '5px',
+            paddingLeft: '4px',
+          }}
+        >
+          <span
+            style={{
+              fontWeight: 400,
+              lineHeight: '1.65',
+            }}
+          >
+            •
+          </span>
+
+          <span>
+            {trimmed.slice(2)}
+          </span>
+        </div>
+      )
+    }
+
+    // Normal paragraph/text line
+    return (
+      <div
+        key={`text-${index}`}
+        style={{
+          marginBottom: '5px',
+        }}
+      >
+        {trimmed}
+      </div>
+    )
+  })
+}
+
+function ChatBubble({ message }) {
+  const isUser = message.role === 'user'
+  const time = formatChatTime(message.timestamp)
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        justifyContent: isUser
+          ? 'flex-end'
+          : 'flex-start',
+        marginBottom: '16px',
+        width: '100%',
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: '10px',
+          maxWidth: '85%',
+          flexDirection: isUser
+            ? 'row-reverse'
+            : 'row',
+        }}
+      >
+        {/* Avatar */}
+        <div
+          style={{
+            width: '36px',
+            height: '36px',
+            minWidth: '36px',
+            borderRadius: '50%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: isUser
+              ? '#2563eb'
+              : '#0f766e',
+            color: '#ffffff',
+          }}
+        >
+          {isUser ? (
+            <User size={19} />
+          ) : (
+            <Bot size={19} />
+          )}
+        </div>
+
+        {/* Message + timestamp */}
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: isUser
+              ? 'flex-end'
+              : 'flex-start',
+          }}
+        >
+          <div
+            style={{
+              padding: '12px 15px',
+              borderRadius: isUser
+                ? '16px 16px 4px 16px'
+                : '16px 16px 16px 4px',
+              backgroundColor: isUser
+                ? '#2563eb'
+                : '#f1f5f9',
+              color: isUser
+                ? '#ffffff'
+                : '#1e293b',
+              fontSize: '14px',
+              lineHeight: '1.65',
+              overflowWrap: 'anywhere',
+              wordBreak: 'break-word',
+            }}
+          >
+            {isUser
+              ? message.content
+              : renderAIResponse(message.content)}
           </div>
-        )}
+
+          {/* Message time */}
+          {time && (
+            <span
+              style={{
+                marginTop: '4px',
+                padding: '0 4px',
+                fontSize: '11px',
+                color: '#94a3b8',
+              }}
+            >
+              {time}
+            </span>
+          )}
+        </div>
       </div>
     </div>
   )
@@ -66,265 +319,538 @@ function ChatBubble({ msg }) {
 
 function TypingIndicator() {
   return (
-    <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
-      <div style={{
-        width: 32, height: 32, borderRadius: '50%',
-        background: 'var(--color-accent)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-      }}>
-        <Bot size={16} color="#fff" />
+    <div
+      style={{
+        display: 'flex',
+        justifyContent: 'flex-start',
+        marginBottom: '16px',
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: '10px',
+        }}
+      >
+        <div
+          style={{
+            width: '36px',
+            height: '36px',
+            minWidth: '36px',
+            borderRadius: '50%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: '#0f766e',
+            color: '#ffffff',
+          }}
+        >
+          <Bot size={19} />
+        </div>
+
+        <div
+          style={{
+            padding: '13px 17px',
+            borderRadius: '16px 16px 16px 4px',
+            backgroundColor: '#f1f5f9',
+            color: '#64748b',
+            fontSize: '14px',
+          }}
+        >
+          <span>•</span>
+          <span style={{ marginLeft: '4px' }}>
+            •
+          </span>
+          <span style={{ marginLeft: '4px' }}>
+            •
+          </span>
+        </div>
       </div>
-      <div style={{
-        background: 'var(--color-surface)',
-        border: '1px solid var(--color-border)',
-        borderRadius: '16px 16px 16px 4px',
-        padding: '14px 18px',
-        boxShadow: 'var(--shadow-sm)',
-        display: 'flex', gap: 5, alignItems: 'center',
-      }}>
-        {[0, 1, 2].map(i => (
-          <span key={i} style={{
-            width: 8, height: 8, borderRadius: '50%',
-            background: 'var(--color-text-light)',
-            display: 'inline-block',
-            animation: `bounce 1.2s ${i * 0.2}s ease-in-out infinite`,
-          }} />
-        ))}
-      </div>
-      <style>{`
-        @keyframes bounce {
-          0%,80%,100% { transform: translateY(0); }
-          40%          { transform: translateY(-8px); }
-        }
-      `}</style>
     </div>
   )
 }
 
-export default function AIChatbot({ initialContext }) {
+export default function AIChatbot() {
   const { user } = useAuth()
-  const bottomRef = useRef(null)
-  const inputRef  = useRef(null)
 
-  const buildInitialMessages = useCallback(() => {
-    const welcome = {
-      role: 'assistant',
-      content: initialContext
-        ? `Hello ${user.username}! I can see you have some health concerns from your recent screening. I'm here to help provide general information.\n\n${DISCLAIMER}`
-        : `Hello ${user.username}! I'm MediPredict's AI Health Assistant. I can help with general health information, symptom guidance, and wellness advice.\n\n${DISCLAIMER}`,
-      timestamp: new Date().toISOString(),
-    }
-    return [welcome]
-  }, [user.username, initialContext])
-
-  const [messages, setMessages] = useState(buildInitialMessages)
-  const [input, setInput]   = useState('')
+  const [messages, setMessages] = useState([])
+  const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
-  const [error, setError]     = useState('')
+  const [error, setError] = useState('')
 
-  // Reset when initialContext changes
-  useEffect(() => {
-    setMessages(buildInitialMessages())
-  }, [initialContext, buildInitialMessages])
+  const messagesEndRef = useRef(null)
+  const inputRef = useRef(null)
 
-  // Scroll to bottom on new message
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, loading])
+  const patientName =
+    user?.name ||
+    user?.full_name ||
+    user?.username ||
+    'Patient'
 
-  // Auto-focus input
-  useEffect(() => {
-    inputRef.current?.focus()
+  const scrollToBottom = useCallback(() => {
+    messagesEndRef.current?.scrollIntoView({
+      behavior: 'smooth',
+    })
   }, [])
 
-  async function sendMessage(text) {
-    const trimmed = (text || input).trim()
-    if (!trimmed || loading) return
+  useEffect(() => {
+    scrollToBottom()
+  }, [messages, loading, scrollToBottom])
 
-    const userMsg = { role: 'user', content: trimmed, timestamp: new Date().toISOString() }
-    const history = [...messages, userMsg]
-    setMessages(history)
-    setInput('')
-    setLoading(true)
+  useEffect(() => {
+    setMessages([
+      {
+        id: 'welcome',
+        role: 'assistant',
+        content:
+          'Hello! I’m MediPredict’s AI Health Assistant. I can help you understand general health questions, symptoms, and common medical information.\n\nWhat would you like to know?',
+        timestamp: new Date().toISOString(),
+      },
+    ])
+  }, [])
+
+  const sendMessage = async (
+    question = input
+  ) => {
+    const trimmedQuestion = String(
+      question || ''
+    ).trim()
+
+    if (!trimmedQuestion || loading) {
+      return
+    }
+
     setError('')
 
-    // Build messages array for API (strip timestamps)
-    const apiMessages = history
-      .filter(m => m.role !== 'system')
-      .map(({ role, content }) => ({ role, content }))
+    const userMessage = {
+      id: `user-${Date.now()}`,
+      role: 'user',
+      content: trimmedQuestion,
+      timestamp: new Date().toISOString(),
+    }
+
+    setMessages((previous) => [
+      ...previous,
+      userMessage,
+    ])
+
+    setInput('')
+    setLoading(true)
 
     try {
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: apiMessages,
-          context: initialContext || '',
-        }),
-      })
+      const response = await fetch(
+        'http://localhost:8000/predict',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            message: trimmedQuestion,
+          }),
+        }
+      )
 
-      if (!res.ok) throw new Error(`Server error ${res.status}`)
-      const data = await res.json()
+      if (!response.ok) {
+        throw new Error(
+          `AI service returned status ${response.status}`
+        )
+      }
 
-      setMessages(prev => [
-        ...prev,
-        { role: 'assistant', content: data.reply, timestamp: new Date().toISOString() },
+      const data = await response.json()
+
+      const answer =
+        data?.reply ||
+        data?.answer ||
+        data?.response ||
+        data?.prediction ||
+        data?.message
+
+      if (
+        typeof answer !== 'string' ||
+        !answer.trim()
+      ) {
+        throw new Error(
+          'The AI service returned an invalid response.'
+        )
+      }
+
+      const assistantMessage = {
+        id: `assistant-${Date.now()}`,
+        role: 'assistant',
+        content: answer.trim(),
+        timestamp: new Date().toISOString(),
+      }
+
+      setMessages((previous) => [
+        ...previous,
+        assistantMessage,
       ])
     } catch (err) {
-      setError('Unable to reach the AI service. Please ensure the backend is running on port 4000.')
-      // Graceful offline fallback
-      setMessages(prev => [
-        ...prev,
-        {
-          role: 'assistant',
-          content: `I'm having trouble connecting to the AI service right now. Please make sure the backend server is running.\n\nIn the meantime, here are some general tips:\n• Stay hydrated and get adequate rest.\n• Monitor your symptoms and note any changes.\n• Consult a healthcare professional for personalised advice.\n\n${DISCLAIMER}`,
-          timestamp: new Date().toISOString(),
-        },
+      console.error(
+        'AI chatbot error:',
+        err
+      )
+
+      setError(
+        'Unable to connect to the AI health assistant. Please make sure the AI service is running on port 8000.'
+      )
+
+      const errorMessage = {
+        id: `error-${Date.now()}`,
+        role: 'assistant',
+        content:
+          'I’m sorry, I couldn’t connect to the AI health service right now. Please try again in a moment.',
+        timestamp: new Date().toISOString(),
+      }
+
+      setMessages((previous) => [
+        ...previous,
+        errorMessage,
       ])
     } finally {
       setLoading(false)
-      inputRef.current?.focus()
+
+      setTimeout(() => {
+        inputRef.current?.focus()
+      }, 100)
     }
   }
 
-  function handleKeyDown(e) {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      sendMessage()
-    }
+  const handleSubmit = (event) => {
+    event.preventDefault()
+    sendMessage()
   }
 
-  function handleReset() {
-    setMessages(buildInitialMessages())
-    setError('')
+  const handleSuggestedQuestion = (
+    question
+  ) => {
+    sendMessage(question)
+  }
+
+  const resetChat = () => {
+    setMessages([
+      {
+        id: `welcome-${Date.now()}`,
+        role: 'assistant',
+        content:
+          'Hello! I’m MediPredict’s AI Health Assistant. I can help you understand general health questions, symptoms, and common medical information.\n\nWhat would you like to know?',
+        timestamp: new Date().toISOString(),
+      },
+    ])
+
     setInput('')
+    setError('')
+
+    setTimeout(() => {
+      inputRef.current?.focus()
+    }, 100)
   }
 
   return (
-    <div style={{ maxWidth: 760, margin: '0 auto', display: 'flex', flexDirection: 'column', height: 'calc(100vh - 140px)', minHeight: 520 }}>
-
-      {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <div>
-          <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: '1.5rem', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 10 }}>
-            <MessageSquare size={22} color="var(--color-primary)" /> AI Health Assistant
-          </h1>
-          <p style={{ color: 'var(--color-text-muted)', fontSize: '.875rem' }}>
-            Powered by MediPredict's health AI · Always consult a doctor for medical decisions
-          </p>
-        </div>
-        <button className="btn btn-ghost btn-sm" onClick={handleReset} title="Clear conversation">
-          <RotateCcw size={15} /> Clear
-        </button>
-      </div>
-
-      {/* Connection error */}
-      {error && (
-        <div className="alert alert-warning" style={{ marginBottom: 12, padding: '10px 14px' }}>
-          <AlertTriangle size={16} style={{ flexShrink: 0 }} />
-          <span style={{ fontSize: '.875rem' }}>{error}</span>
-        </div>
-      )}
-
-      {/* Chat window */}
-      <div style={{
-        flex: 1,
-        background: 'var(--color-bg-alt)',
-        borderRadius: 'var(--radius-xl)',
-        border: '1px solid var(--color-border)',
-        padding: '20px 20px 16px',
-        overflowY: 'auto',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 16,
-        marginBottom: 16,
-      }}>
-        {messages.map((msg, i) => <ChatBubble key={i} msg={msg} />)}
-        {loading && <TypingIndicator />}
-        <div ref={bottomRef} />
-      </div>
-
-      {/* Suggested questions — only when fresh */}
-      {messages.length <= 1 && (
-        <div style={{ marginBottom: 12 }}>
-          <p style={{ fontSize: '.8125rem', color: 'var(--color-text-muted)', marginBottom: 8, fontWeight: 600 }}>
-            Suggested questions:
-          </p>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            {SUGGESTED_QUESTIONS.map(q => (
-              <button key={q} onClick={() => sendMessage(q)}
-                style={{
-                  padding: '5px 12px', borderRadius: 'var(--radius-full)',
-                  border: '1.5px solid var(--color-border)',
-                  background: 'var(--color-surface)',
-                  color: 'var(--color-text-muted)',
-                  fontSize: '.8125rem', cursor: 'pointer', fontWeight: 500,
-                  transition: 'all .15s',
-                }}
-                onMouseEnter={e => { e.target.style.borderColor = 'var(--color-primary)'; e.target.style.color = 'var(--color-primary)' }}
-                onMouseLeave={e => { e.target.style.borderColor = 'var(--color-border)'; e.target.style.color = 'var(--color-text-muted)' }}
-              >
-                {q}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Input box */}
-      <div style={{
-        display: 'flex', gap: 10,
-        background: 'var(--color-surface)',
-        border: '1.5px solid var(--color-border)',
-        borderRadius: 'var(--radius-xl)',
-        padding: '10px 10px 10px 16px',
-        boxShadow: 'var(--shadow-sm)',
-        transition: 'border-color .15s',
+    <div
+      style={{
+        width: '100%',
+        maxWidth: '1000px',
+        margin: '0 auto',
+        padding: '20px',
+        boxSizing: 'border-box',
       }}
-        onFocusCapture={e => e.currentTarget.style.borderColor = 'var(--color-primary)'}
-        onBlurCapture={e => e.currentTarget.style.borderColor = 'var(--color-border)'}
+    >
+      {/* Header */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: '18px',
+          gap: '12px',
+        }}
       >
-        <textarea
-          ref={inputRef}
-          rows={1}
-          value={input}
-          onChange={e => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="Ask a health question… (Enter to send, Shift+Enter for new line)"
-          disabled={loading}
+        <div
           style={{
-            flex: 1, border: 'none', outline: 'none', resize: 'none',
-            fontFamily: 'var(--font-body)', fontSize: '.9375rem',
-            color: 'var(--color-text)', background: 'transparent',
-            lineHeight: 1.5, maxHeight: 120, overflowY: 'auto',
-          }}
-        />
-        <button
-          onClick={() => sendMessage()}
-          disabled={loading || !input.trim()}
-          style={{
-            width: 40, height: 40, borderRadius: '50%', flexShrink: 0,
-            background: loading || !input.trim() ? 'var(--color-bg-alt)' : 'var(--color-primary)',
-            border: 'none', cursor: loading || !input.trim() ? 'default' : 'pointer',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            transition: 'background .18s',
-            alignSelf: 'flex-end',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px',
           }}
         >
-          {loading
-            ? <span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }} />
-            : <Send size={16} color={loading || !input.trim() ? 'var(--color-text-light)' : '#fff'} />
-          }
+          <div
+            style={{
+              width: '44px',
+              height: '44px',
+              borderRadius: '12px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: '#ccfbf1',
+              color: '#0f766e',
+            }}
+          >
+            <MessageSquare size={23} />
+          </div>
+
+          <div>
+            <h2
+              style={{
+                margin: 0,
+                fontSize: '22px',
+                fontWeight: 700,
+                color: '#0f172a',
+              }}
+            >
+              AI Health Assistant
+            </h2>
+
+            <p
+              style={{
+                margin: '3px 0 0',
+                fontSize: '13px',
+                color: '#64748b',
+              }}
+            >
+              Patient: <strong>{patientName}</strong>
+            </p>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={resetChat}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '7px',
+            padding: '9px 13px',
+            border: '1px solid #cbd5e1',
+            borderRadius: '9px',
+            backgroundColor: '#ffffff',
+            color: '#334155',
+            cursor: 'pointer',
+            fontSize: '13px',
+            fontWeight: 600,
+          }}
+        >
+          <RotateCcw size={15} />
+          New Chat
         </button>
       </div>
 
-      {/* Footer disclaimer */}
-      <p style={{
-        textAlign: 'center', fontSize: '.75rem',
-        color: 'var(--color-text-light)', marginTop: 8, lineHeight: 1.5,
-      }}>
-        {DISCLAIMER}
-      </p>
+      {/* Disclaimer */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: '10px',
+          padding: '12px 14px',
+          marginBottom: '16px',
+          borderRadius: '10px',
+          backgroundColor: '#fff7ed',
+          border: '1px solid #fed7aa',
+          color: '#9a3412',
+          fontSize: '13px',
+          lineHeight: '1.5',
+        }}
+      >
+        <AlertTriangle
+          size={18}
+          style={{
+            minWidth: '18px',
+            marginTop: '1px',
+          }}
+        />
+
+        <span>{DISCLAIMER}</span>
+      </div>
+
+      {/* Chat */}
+      <div
+        style={{
+          border: '1px solid #e2e8f0',
+          borderRadius: '16px',
+          backgroundColor: '#ffffff',
+          overflow: 'hidden',
+        }}
+      >
+        {/* Messages */}
+        <div
+          style={{
+            minHeight: '420px',
+            maxHeight: '600px',
+            overflowY: 'auto',
+            padding: '20px',
+            backgroundColor: '#ffffff',
+          }}
+        >
+          {messages.map((message) => (
+            <ChatBubble
+              key={message.id}
+              message={message}
+            />
+          ))}
+
+          {loading && <TypingIndicator />}
+
+          {error && (
+            <div
+              style={{
+                marginTop: '8px',
+                padding: '10px 12px',
+                borderRadius: '8px',
+                backgroundColor: '#fef2f2',
+                border: '1px solid #fecaca',
+                color: '#b91c1c',
+                fontSize: '13px',
+              }}
+            >
+              {error}
+            </div>
+          )}
+
+          {/* Suggested questions */}
+          {messages.length <= 1 &&
+            !loading && (
+              <div
+                style={{
+                  marginTop: '10px',
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    color: '#64748b',
+                    marginBottom: '10px',
+                  }}
+                >
+                  Suggested questions
+                </div>
+
+                <div
+                  style={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    gap: '8px',
+                  }}
+                >
+                  {SUGGESTED_QUESTIONS.map(
+                    (question) => (
+                      <button
+                        key={question}
+                        type="button"
+                        onClick={() =>
+                          handleSuggestedQuestion(
+                            question
+                          )
+                        }
+                        style={{
+                          padding: '8px 11px',
+                          borderRadius: '9px',
+                          border:
+                            '1px solid #cbd5e1',
+                          backgroundColor:
+                            '#f8fafc',
+                          color: '#334155',
+                          cursor: 'pointer',
+                          fontSize: '12px',
+                          lineHeight: '1.4',
+                        }}
+                      >
+                        {question}
+                      </button>
+                    )
+                  )}
+                </div>
+              </div>
+            )}
+
+          <div ref={messagesEndRef} />
+        </div>
+
+        {/* Input */}
+        <form
+          onSubmit={handleSubmit}
+          style={{
+            display: 'flex',
+            gap: '10px',
+            padding: '14px',
+            borderTop:
+              '1px solid #e2e8f0',
+            backgroundColor: '#f8fafc',
+          }}
+        >
+          <input
+            ref={inputRef}
+            type="text"
+            value={input}
+            onChange={(event) =>
+              setInput(event.target.value)
+            }
+            placeholder="Ask a health question..."
+            disabled={loading}
+            style={{
+              flex: 1,
+              minWidth: 0,
+              padding: '11px 13px',
+              border:
+                '1px solid #cbd5e1',
+              borderRadius: '10px',
+              outline: 'none',
+              fontSize: '14px',
+              color: '#1e293b',
+              backgroundColor: '#ffffff',
+              boxSizing: 'border-box',
+            }}
+          />
+
+          <button
+            type="submit"
+            disabled={
+              loading ||
+              !input.trim()
+            }
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '7px',
+              padding: '11px 16px',
+              border: 'none',
+              borderRadius: '10px',
+              backgroundColor:
+                loading ||
+                !input.trim()
+                  ? '#94a3b8'
+                  : '#0f766e',
+              color: '#ffffff',
+              cursor:
+                loading ||
+                !input.trim()
+                  ? 'not-allowed'
+                  : 'pointer',
+              fontSize: '14px',
+              fontWeight: 600,
+            }}
+          >
+            <Send size={16} />
+            Send
+          </button>
+        </form>
+      </div>
+
+      {/* Footer */}
+      <div
+        style={{
+          textAlign: 'center',
+          marginTop: '12px',
+          fontSize: '11px',
+          color: '#94a3b8',
+        }}
+      >
+        AI-generated information • Always consult a
+        qualified healthcare professional for medical
+        decisions.
+      </div>
     </div>
   )
 }

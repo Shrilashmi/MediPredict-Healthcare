@@ -94,12 +94,12 @@ export default function AuthPage() {
     setError('')
     try {
       if (mode === 'login') {
-        const user = login(form.username.trim(), form.password)
-        navigate(user.role === 'doctor' ? '/doctor' : '/patient', { replace: true })
-      } else {
-        const user = register(form.username.trim(), form.password, role)
-        navigate(user.role === 'doctor' ? '/doctor' : '/patient', { replace: true })
-      }
+  const user = await login(form.username.trim(), form.password)
+  navigate(user.role === 'doctor' ? '/doctor' : '/patient', { replace: true })
+} else {
+  const user = await register(form.username.trim(), form.password, role)
+  navigate(user.role === 'doctor' ? '/doctor' : '/patient', { replace: true })
+}
     } catch (ex) {
       setError(ex.message || 'Something went wrong. Please try again.')
     } finally {

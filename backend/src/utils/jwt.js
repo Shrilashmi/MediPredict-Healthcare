@@ -16,7 +16,7 @@ const EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d'
  * @returns {string} JWT token
  */
 export function signToken(payload) {
-  return jwt.sign(payload, SECRET, { expiresIn: EXPIRES_IN })
+    return jwt.sign(payload, SECRET, { expiresIn: EXPIRES_IN })
 }
 
 /**
@@ -25,9 +25,9 @@ export function signToken(payload) {
  * @returns {object|null} decoded payload or null if invalid
  */
 export function verifyToken(token) {
-  try {
-    return jwt.verify(token, SECRET)
-  } catch {
-    return null
-  }
+    try {
+        return jwt.verify(token, SECRET)
+    } catch {
+        return null
+    }
 }

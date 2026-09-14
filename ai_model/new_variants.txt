@@ -1,0 +1,22 @@
+
+    "Cough": [
+        "Why am I coughing so much?",
+        "What could be causing my cough?",
+        "I have been coughing a lot. What could be the reason?",
+        "What are common causes of coughing?",
+        "Why do I keep coughing?",
+        "I have a persistent cough. What could cause it?",
+        "What can cause a cough that does not go away?",
+        "Why have I suddenly started coughing?"
+    ],
+
+    "Back Pain": [
+        "Why does my back hurt?",
+        "What could be causing my back pain?",
+        "I have pain in my back. What could be the reason?",
+        "What are common causes of back pain?",
+        "Why am I having lower back pain?",
+        "What can cause sudden back pain?",
+        "I keep getting back pain. What could cause it?",
+        "When can back pain be a sign of a health problem?"
+    ]

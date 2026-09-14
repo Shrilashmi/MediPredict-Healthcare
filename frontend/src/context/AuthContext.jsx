@@ -1,79 +1,130 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react'
-import { Users, seedIfNeeded } from '../utils/db.js'
+import { api } from '../config/api.js'
 
 const AuthContext = createContext(null)
 
 const SESSION_KEY = 'mp_session'
+const TOKEN_KEY = 'token'
 
 export function AuthProvider({ children }) {
-  const [user, setUser]       = useState(null)
+  const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
 
-  // ── Initialise: seed data, then restore session ──────────────────────────
+  // ── Initialise: restore authenticated session ────────────────────────────
   useEffect(() => {
-    seedIfNeeded()
-    try {
-      const stored = localStorage.getItem(SESSION_KEY)
-      if (stored) {
-        const parsed = JSON.parse(stored)
-        // Re-validate user still exists
-        const fresh = Users.findById(parsed.id)
-        if (fresh) {
-          const { password: _p, ...safe } = fresh
-          setUser(safe)
-        } else {
+    async function restoreSession() {
+      try {
+        const token = localStorage.getItem(TOKEN_KEY)
+
+        if (!token) {
           localStorage.removeItem(SESSION_KEY)
+          setLoading(false)
+          return
         }
+
+        const data = await api.get('/api/auth/me')
+
+        if (data?.user) {
+          localStorage.setItem(SESSION_KEY, JSON.stringify(data.user))
+          setUser(data.user)
+        } else {
+          throw new Error('Invalid session')
+        }
+      } catch (error) {
+        console.warn('Session restore failed:', error.message)
+        localStorage.removeItem(TOKEN_KEY)
+        localStorage.removeItem(SESSION_KEY)
+        setUser(null)
+      } finally {
+        setLoading(false)
       }
-    } catch {
-      localStorage.removeItem(SESSION_KEY)
     }
-    setLoading(false)
+
+    restoreSession()
   }, [])
 
   // ── Login ────────────────────────────────────────────────────────────────
-  const login = useCallback((username, password) => {
-    const authenticated = Users.authenticate(username, password)
-    if (!authenticated) throw new Error('Invalid username or password')
-    localStorage.setItem(SESSION_KEY, JSON.stringify(authenticated))
-    setUser(authenticated)
-    return authenticated
+  const login = useCallback(async (username, password) => {
+    const data = await api.post('/api/auth/login', {
+      username,
+      password,
+    })
+
+    if (!data?.token || !data?.user) {
+      throw new Error('Invalid login response from server')
+    }
+
+    // Store JWT for authenticated API requests
+    localStorage.setItem(TOKEN_KEY, data.token)
+
+    // Store user session
+    localStorage.setItem(SESSION_KEY, JSON.stringify(data.user))
+
+    setUser(data.user)
+
+    return data.user
   }, [])
 
   // ── Register ─────────────────────────────────────────────────────────────
-  const register = useCallback((username, password, role) => {
-    const created = Users.create({ username, password, role })
-    const { password: _p, ...safe } = created
-    localStorage.setItem(SESSION_KEY, JSON.stringify(safe))
-    setUser(safe)
-    return safe
+  const register = useCallback(async (username, password, role) => {
+    const data = await api.post('/api/auth/register', {
+      username,
+      password,
+      role,
+    })
+
+    if (!data?.token || !data?.user) {
+      throw new Error('Invalid registration response from server')
+    }
+
+    // Store JWT for authenticated API requests
+    localStorage.setItem(TOKEN_KEY, data.token)
+
+    // Store user session
+    localStorage.setItem(SESSION_KEY, JSON.stringify(data.user))
+
+    setUser(data.user)
+
+    return data.user
   }, [])
 
   // ── Logout ───────────────────────────────────────────────────────────────
   const logout = useCallback(() => {
+    localStorage.removeItem(TOKEN_KEY)
     localStorage.removeItem(SESSION_KEY)
     setUser(null)
   }, [])
 
   return (
     <AuthContext.Provider value={{ user, loading, login, register, logout }}>
-      {loading
-        ? (
-          <div style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            height: '100vh', background: 'var(--color-bg)'
-          }}>
-            <div className="spinner" style={{ width: 40, height: 40 }} />
-          </div>
-        )
-        : children
-      }
+      {loading ? (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            height: '100vh',
+            background: 'var(--color-bg)',
+          }}
+        >
+          <div
+            className="spinner"
+            style={{ width: 40, height: 40 }}
+          />
+        </div>
+      ) : (
+        children
+      )}
     </AuthContext.Provider>
   )
 }
 
 export function useAuth() {
   const ctx = useContext(AuthContext)
-  if (!ctx) throw new Error('useAuth must be used within <AuthProvider>')
+
+  if (!ctx) {
+    throw new Error('useAuth must be used within <AuthProvider>')
+  }
+
   return ctx
 }
