@@ -1,4 +1,9 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react'
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+} from 'react'
 import {
   MessageSquare,
   Send,
@@ -8,6 +13,10 @@ import {
   User,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext.jsx'
+
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL ||
+  'http://localhost:4000'
 
 const DISCLAIMER =
   'MediPredict AI provides general health information and is not a substitute for professional medical advice, diagnosis, or treatment. If you have severe or worsening symptoms, seek urgent medical care.'
@@ -50,13 +59,15 @@ function formatAIResponse(text) {
     .replace(/\r/g, '\n')
     .trim()
 
-  // Convert bullet characters to normal bullets
-  formatted = formatted.replace(/â€¢\s*/g, '- ')
-  formatted = formatted.replace(/•\s*/g, '- ')
+  // Convert common corrupted bullet characters to normal bullets.
+  formatted = formatted.replace(
+    /(?:â€¢|Ã¢â‚¬Â¢)\s*/g,
+    '- '
+  )
 
   /*
    * Put known headings on their own lines.
-   * This handles MedQuad answers where headings may
+   * This handles MedQuAD answers where headings may
    * appear between spaces instead of real line breaks.
    */
   const headings = [
@@ -72,7 +83,7 @@ function formatAIResponse(text) {
       '\\$&'
     )
 
-    // Heading preceded by punctuation
+    // Heading preceded by punctuation.
     formatted = formatted.replace(
       new RegExp(
         `([.!?])\\s+(${escaped})(?=\\s|$)`,
@@ -81,7 +92,7 @@ function formatAIResponse(text) {
       '$1\n\n$2\n\n'
     )
 
-    // Heading preceded by multiple spaces
+    // Heading preceded by multiple spaces.
     formatted = formatted.replace(
       new RegExp(
         `\\s{2,}(${escaped})(?=\\s|$)`,
@@ -133,7 +144,6 @@ function formatAIResponse(text) {
 
 /*
  * Render the AI response as structured React elements.
- * This makes headings bold and bullets visually separate.
  */
 function renderAIResponse(text) {
   const formatted = formatAIResponse(text)
@@ -145,7 +155,7 @@ function renderAIResponse(text) {
   return lines.map((line, index) => {
     const trimmed = line.trim()
 
-    // Blank line
+    // Blank line.
     if (!trimmed) {
       return (
         <div
@@ -155,7 +165,26 @@ function renderAIResponse(text) {
       )
     }
 
-    // Heading
+    // Emergency alert.
+    if (
+      trimmed.includes('Emergency Alert') ||
+      trimmed.includes('🚨')
+    ) {
+      return (
+        <div
+          key={`emergency-${index}`}
+          style={{
+            fontWeight: 700,
+            color: '#b91c1c',
+            marginBottom: '8px',
+          }}
+        >
+          {trimmed}
+        </div>
+      )
+    }
+
+    // Heading.
     if (AI_HEADINGS.has(trimmed)) {
       return (
         <div
@@ -173,7 +202,7 @@ function renderAIResponse(text) {
       )
     }
 
-    // Bullet
+    // Bullet.
     if (trimmed.startsWith('- ')) {
       return (
         <div
@@ -202,7 +231,7 @@ function renderAIResponse(text) {
       )
     }
 
-    // Normal paragraph/text line
+    // Normal paragraph/text line.
     return (
       <div
         key={`text-${index}`}
@@ -404,7 +433,7 @@ export default function AIChatbot() {
         id: 'welcome',
         role: 'assistant',
         content:
-          'Hello! I’m MediPredict’s AI Health Assistant. I can help you understand general health questions, symptoms, and common medical information.\n\nWhat would you like to know?',
+          "Hello! I'm MediPredict's AI Health Assistant. I can help you understand general health questions, symptoms, and common medical information.\n\nWhat would you like to know?",
         timestamp: new Date().toISOString(),
       },
     ])
@@ -439,15 +468,29 @@ export default function AIChatbot() {
     setLoading(true)
 
     try {
+      /*
+       * IMPORTANT:
+       * Patient AI Assistant must use the backend /api/chat
+       * endpoint instead of calling the Python ML service
+       * directly.
+       *
+       * This ensures emergency rules in aiService.js are
+       * executed before the TF-IDF model.
+       */
       const response = await fetch(
-        'http://localhost:8000/predict',
+        `${API_BASE_URL}/api/chat`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            message: trimmedQuestion,
+            messages: [
+              {
+                role: 'user',
+                content: trimmedQuestion,
+              },
+            ],
           }),
         }
       )
@@ -494,14 +537,14 @@ export default function AIChatbot() {
       )
 
       setError(
-        'Unable to connect to the AI health assistant. Please make sure the AI service is running on port 8000.'
+        'Unable to connect to the AI health assistant. Please make sure the MediPredict backend is running on port 4000.'
       )
 
       const errorMessage = {
         id: `error-${Date.now()}`,
         role: 'assistant',
         content:
-          'I’m sorry, I couldn’t connect to the AI health service right now. Please try again in a moment.',
+          "I'm sorry, I couldn't connect to the AI health service right now. Please try again in a moment.",
         timestamp: new Date().toISOString(),
       }
 
@@ -535,7 +578,7 @@ export default function AIChatbot() {
         id: `welcome-${Date.now()}`,
         role: 'assistant',
         content:
-          'Hello! I’m MediPredict’s AI Health Assistant. I can help you understand general health questions, symptoms, and common medical information.\n\nWhat would you like to know?',
+          "Hello! I'm MediPredict's AI Health Assistant. I can help you understand general health questions, symptoms, and common medical information.\n\nWhat would you like to know?",
         timestamp: new Date().toISOString(),
       },
     ])
@@ -609,7 +652,8 @@ export default function AIChatbot() {
                 color: '#64748b',
               }}
             >
-              Patient: <strong>{patientName}</strong>
+              Patient:{' '}
+              <strong>{patientName}</strong>
             </p>
           </div>
         </div>
